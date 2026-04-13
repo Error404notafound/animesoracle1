@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AnimesOracle</title>
+    <style>
+        :root {
+            --bg: #0f0f0f; 
+            --card: #1a1a1a; 
+            --text: #ffffff; 
+            --primary: #6200ea; /* Roxo forte azulado */
+            --brightness: 100%;
+        }
+        body { 
+            margin: 0; padding: 0; background: var(--bg); color: var(--text);
+            font-family: 'Segoe UI', sans-serif; overflow-x: hidden;
+            filter: brightness(var(--brightness));
+        }
+
+        /* HEADER CENTRALIZADO */
+        header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 15px; background: #000; height: 60px; position: sticky; top: 0; z-index: 1000;
+        }
+        .header-btn-container { width: 45px; display: flex; align-items: center; }
+        .logo { font-weight: bold; color: var(--primary); font-size: 20px; flex-grow: 1; text-align: center; }
+        .icon-btn { font-size: 26px; cursor: pointer; background: none; border: none; color: var(--primary); padding: 0; }
+        
+        /* BUSCA */
+        #searchBox {
+            display: none; position: absolute; left: 0; top: 60px; width: 100%;
+            padding: 10px; background: #000; box-sizing: border-box; z-index: 999;
+        }
+        #searchBox input { width: 100%; padding: 12px; border-radius: 5px; border: 1px solid var(--primary); background: #222; color: white; }
+
+        /* MENU ALFABÉTICO */
+        .abc-menu {
+            display: flex; overflow-x: auto; background: #111; padding: 12px; gap: 20px;
+            scrollbar-width: none; border-bottom: 1px solid #222; -webkit-overflow-scrolling: touch;
+        }
+        .abc-menu::-webkit-scrollbar { display: none; }
+        .abc-menu a { color: var(--primary); text-decoration: none; font-weight: bold; font-size: 16px; min-width: 15px; text-align: center; }
+
+        /* MENU LATERAL */
+        .side-menu {
+            position: fixed; left: -100%; top: 0; width: 80%; max-width: 300px;
+            height: 100%; background: #151515; z-index: 2000; transition: 0.3s; padding: 20px;
+        }
+        .side-menu.active { left: 0; }
+        .profile-area { text-align: center; padding-bottom: 20px; border-bottom: 1px solid #333; margin-bottom: 10px; }
+        .user-avatar { width: 70px; height: 70px; border-radius: 50%; background: #333; object-fit: cover; border: 2px solid var(--primary); }
+        .nav-links a { display: block; color: white; padding: 15px 0; text-decoration: none; border-bottom: 1px solid #222; font-size: 14px; }
+
+        /* DESTAQUE ROXO NOS MAIS VOTADOS */
+        .section-title { padding: 15px 10px 5px; font-size: 13px; color: #888; text-transform: uppercase; }
+        .slider { display: flex; overflow-x: auto; gap: 12px; padding: 10px; scrollbar-width: none; }
+        .featured-card { 
+            min-width: 140px; background: var(--card); border-radius: 8px; overflow: hidden; 
+            border: 2px solid var(--primary);
+            box-shadow: 0 0 10px rgba(98, 0, 234, 0.2); position: relative;
+        }
+        .featured-card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; }
+
+        /* RECENTES */
+        .grid-recent { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px; }
+        .card-recent { background: var(--card); border-radius: 8px; overflow: hidden; }
+        .card-recent img { width: 100%; aspect-ratio: 2/3; object-fit: cover; }
+
+        /* TELA DO PLAYER */
+        #animePlayerPage {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg); z-index: 4000; overflow-y: auto; padding-bottom: 50px;
+        }
+        .video-container { width: 100%; aspect-ratio: 16/9; background: #000; }
+        .player-tabs { display: flex; background: #111; border-bottom: 2px solid #222; }
+        .tab-btn { flex: 1; padding: 15px; border: none; background: none; color: #888; font-weight: bold; }
+        .tab-btn.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        .ep-item { background: #1a1a1a; padding: 12px; margin: 10px; border-radius: 5px; font-size: 14px; }
+
+        /* MODAIS */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 5000; justify-content: center; align-items: center;
+        }
+        .modal-card { background: #1a1a1a; padding: 25px; border-radius: 15px; width: 90%; max-width: 400px; border: 1px solid var(--primary); }
+        input, select, textarea { width: 100%; padding: 12px; margin: 10px 0; background: #222; border: 1px solid #333; color: white; border-radius: 5px; box-sizing: border-box;}
+        
+        #overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1500; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-btn-container"><button class="icon-btn" onclick="toggleMenu()"></button></div>
+    <div class="logo">AnimesOracle</div>
+    <div class="header-btn-container" style="justify-content: flex-end; gap: 10px;">
+        <button class="icon-btn" onclick="abrirPostar()"></button>
+        <button class="icon-btn" onclick="toggleSearch()"></button>
+    </div>
+    <div id="searchBox"><input type="text" placeholder="Pesquisar..."></div>
+</header>
+
+<div class="abc-menu" id="abcContainer"></div>
+
+<!-- Menu Lateral -->
+<div id="overlay" onclick="toggleMenu()"></div>
+<div class="side-menu" id="sideMenu">
+    <div class="profile-area">
+        <img src="https://placeholder.com" class="user-avatar" id="userPhoto">
+        <h4 id="userNameDisplay" style="margin: 10px 0;">Visitante</h4>
+        <button onclick="fazerLogin()" style="background:var(--primary); border:none; color:white; padding:8px 15px; border-radius:4px;">Login / Cadastro</button>
+    </div>
+    <nav class="nav-links">
+        <a href="#">Animes Dublados</a>
+        <a href="#">Animes Legendados</a>
+        <div id="loggedOptions" style="display:none; padding:10px;">
+            <small>Ajustar Brilho:</small>
+            <input type="range" min="30" max="100" value="100" oninput="setBrilho(this.value)">
+            <label><input type="checkbox"> Modo Adulto (+18)</label>
+        </div>
+    </nav>
+    <div id="favoritesList" style="margin-top:20px;">
+        <small style="color:var(--primary)">MINHA LISTA</small>
+    </div>
+</div>
+
+<!-- Modal de Postagem -->
+<div id="postarModal" class="modal">
+    <div class="modal-card">
+        <h3 style="color:var(--primary); margin:0;">Postar Anime</h3>
+        <input type="text" id="pNome" placeholder="Nome do Anime">
+        <input type="text" id="pLink" placeholder="Link do Vídeo">
+        <select id="pCat">
+            <option value="comum">Comum</option>
+            <option value="adulto">+18 (Ecchi/Hentai)</option>
+        </select>
+        <button onclick="salvarPost()" style="width:100%; padding:12px; background:var(--primary); border:none; color:white; border-radius:5px;">Publicar</button>
+        <button onclick="fecharPostar()" style="background:none; border:none; color:#666; width:100%; margin-top:10px;">Cancelar</button>
+    </div>
+</div>
+
+<!-- Interface do Player -->
+<div id="animePlayerPage">
+    <div style="padding:10px; background:#000; display:flex; align-items:center; gap:15px;">
+        <button class="icon-btn" onclick="fecharPlayer()"></button>
+        <h3 id="playerTitle" style="margin:0;">Anime Selecionado</h3>
+    </div>
+    <div class="video-container" id="videoArea">
+        <div style="height:100%; display:flex; align-items:center; justify-content:center; color:#555;">Selecione o episódio</div>
+    </div>
+    <div class="player-tabs">
+        <button class="tab-btn active" onclick="switchTab('legendado')">LEGENDADO</button>
+        <button class="tab-btn" onclick="switchTab('dublado')">DUBLADO</button>
+    </div>
+    <div style="padding:10px; display:flex; gap:10px;">
+        <button onclick="toggleFavorito()" style="flex:1; background:#222; border:1px solid var(--primary); color:white; padding:8px; border-radius:5px;"> Salvar</button>
+        <button onclick="alert('Erro reportado!')" style="flex:1; background:#300; border:1px solid #f00; color:#f88; padding:8px; border-radius:5px;"> Reportar</button>
+    </div>
+    <div id="epList"></div>
+</div>
+
+<!-- Conteúdo Principal -->
+<div class="section-title">Mais Votados & Assistidos</div>
+<div class="slider">
+    <div class="featured-card" onclick="abrirPlayer('Solo Leveling')">
+        <div style="position:absolute; top:5px; right:5px; background:var(--primary); font-size:10px; padding:2px 6px;">P1 | P2</div>
+        <img src="https://placeholder.com">
+    </div>
+</div>
+
+<div class="section-title">Adicionados Recentemente</div>
+<div class="grid-recent">
+    <div class="card-recent"><img src="https://placeholder.com"></div>
+    <div class="card-recent"><img src="https://placeholder.com"></div>
+</div>
+
+<script>
+    // Gerar Menu A-Z
+    const abcContainer = document.getElementById('abcContainer');
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").forEach(l => {
+        abcContainer.innerHTML += `<a href="#">${l}</a>`;
+    });
+
+    // Funções de Interface
+    function toggleMenu() {
+        document.getElementById('sideMenu').classList.toggle('active');
+        document.getElementById('overlay').style.display = document.getElementById('sideMenu').classList.contains('active') ? 'block' : 'none';
+    }
+
+    function toggleSearch() {
+        const s = document.getElementById('searchBox');
+        s.style.display = s.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function abrirPostar() { document.getElementById('postarModal').style.display = 'flex'; }
+    function fecharPostar() { document.getElementById('postarModal').style.display = 'none'; }
+    
+    function setBrilho(v) { document.documentElement.style.setProperty('--brightness', v + '%'); }
+
+    function abrirPlayer(nome) {
+        document.getElementById('playerTitle').innerText = nome;
+        document.getElementById('animePlayerPage').style.display = 'block';
+        renderEps();
+    }
+    function fecharPlayer() { document.getElementById('animePlayerPage').style.display = 'none'; }
+
+    function renderEps() {
+        const list = document.getElementById('epList');
+        list.innerHTML = `<div class="ep-item" onclick="alert('Carregando Video...')">Episódio 01 - O Despertar <span style="float:right; color:var(--primary)">P1</span></div>`;
+    }
+
+    function fazerLogin() {
+        const n = prompt("Nome de usuário:");
+        if(n) {
+            document.getElementById('userNameDisplay').innerText = n;
+            document.getElementById('loggedOptions').style.display = 'block';
+        }
+    }
+
+    function salvarPost() {
+        alert("Anime enviado para análise!");
+        fecharPostar();
+    }
+</script>
+
+</body>
+</html>
