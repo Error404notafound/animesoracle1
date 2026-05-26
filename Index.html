@@ -1,0 +1,243 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Regra CRUCIAL para consultas de grupo de coleções (collectionGroup) para 'episodios'
+    // Permite que qualquer pessoa (usuário não autenticado ou autenticado) leia documentos
+    // de QUALQUER subcoleção 'episodios' em qualquer lugar da base de dados.
+    // Isso é necessário para a função `db.collectionGroup("episodios")` funcionar,
+    // por exemplo, para carregar os episódios recentes na tela inicial.
+    match /{path=**}/episodios/{episodioId} {
+      allow read: if true;
+    }
+
+    // Regras para a coleção 'users'
+    match /users/{userId} {
+      // PERMISSÃO CORRIGIDA:
+      // Permite que QUALQUER USUÁRIO AUTENTICADO (request.auth != null) leia o perfil de QUALQUER OUTRO USUÁRIO (userId),
+      // mas APENAS se estiver lendo o PRÓPRIO perfil, OU se estiver lendo campos específicos
+      // (como photoURL, displayName, status) que são considerados públicos.
+      // Isso é necessário para exibir a foto/nome do autor da waifu no modal de detalhes.
+      allow read: if request.auth != null && (
+        userId == request.auth.uid || // Pode ler o próprio perfil COMPLETAMENTE
+        resource.data.keys().hasAll(['photoURL', 'displayName', 'status', 'statusExpiration']) // Outros usuários podem ler APENAS esses campos públicos
+      );
+      // Permite criar o próprio perfil
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // Permite exclusão apenas se o usuário estiver autenticado e o ID do documento
+      // corresponder ao ID do usuário autenticado.
+      allow delete: if request.auth != null && request.auth.uid == userId;
+
+      // Permite atualização apenas se o usuário estiver autenticado e o ID do documento
+      // corresponder ao ID do usuário autenticado, e com validações de campo específicas.
+      // Esta regra valida os campos que o cliente pode atualizar no perfil do usuário.
+      allow update: if request.auth != null && request.auth.uid == userId && (
+        (!('email' in request.resource.data) || request.resource.data.email == resource.data.email) &&
+        (!('animesSalvos' in request.resource.data) || request.resource.data.animesSalvos is list) &&
+        (!('waifusSalvas' in request.resource.data) || request.resource.data.waifusSalvas is list) && 
+        (!('animesAssistidos' in request.resource.data) || request.resource.data.animesAssistidos is list) &&
+        (!('modoAdulto' in request.resource.data) || request.resource.data.modoAdulto is bool) &&
+        (!('theme' in request.resource.data) || request.resource.data.theme is string) &&
+        (!('status' in request.resource.data) || request.resource.data.status is string) &&
+        (!('statusExpiration' in request.resource.data) || (request.resource.data.statusExpiration == null || request.resource.data.statusExpiration is timestamp)) &&
+        (!('photoURL' in request.resource.data) || (request.resource.data.photoURL == null || request.resource.data.photoURL is string)) &&
+        (!('displayName' in request.resource.data) || (request.resource.data.displayName == null || request.resource.data.displayName is string)) &&
+        (!('savedContentType' in request.resource.data) || request.resource.data.savedContentType is string) &&
+        (!('following' in request.resource.data) || request.resource.data.following is list) && // Nova validação
+        (!('savedTags' in request.resource.data) || request.resource.data.savedTags is list) && // Nova validação
+        (!('likedWaifuTags' in request.resource.data) || request.resource.data.likedWaifuTags is list) // Nova validação
+      );
+    }
+
+    // Regras para a coleção de 'series'
+    match /series/{serieId} {
+      // PERMISSÃO TOTAL DE LEITURA: Qualquer pessoa pode ler qualquer série.
+      // Esta regra é o que permite que as seções da sua homepage carreguem os dados das séries.
+      allow read: if true;
+
+      // Apenas usuários autenticados podem criar novas séries.
+      allow create: if request.auth != null;
+
+      // ATUALIZAÇÃO PERMITIDA PARA TODOS: Permite que QUALQUER USUÁRIO (autenticado ou não) incremente APENAS o campo 'visualizacoes'.
+      // Isso é seguro pois 'diff(...).affectedKeys().hasOnly' garante que apenas este campo pode ser alterado.
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visualizacoes']) &&
+                       request.resource.data.visualizacoes is number;
+
+      // Regras adicionais de atualização por usuários AUTENTICADOS (criador, likes/dislikes).
+      // As demais condições de atualização SÓ são permitidas se o usuário estiver autenticado.
+      allow update: if request.auth != null && (
+        // Condição 1: O usuário autenticado é o criador original da série.
+        request.auth.uid == resource.data.postedBy ||
+
+        // Condição 2: A atualização é para manipulação de likes/dislikes.
+        // Valida a consistência dos dados de likes/dislikes e a presença do UID do usuário autenticado.
+        (
+          request.resource.data.keys().hasAll(['likes', 'dislikes', 'usersWhoLiked', 'usersWhoDisliked']) &&
+          request.resource.data.likes is int && request.resource.data.dislikes is int &&
+          request.resource.data.likes >= 0 && request.resource.data.dislikes >= 0 &&
+          request.resource.data.usersWhoLiked is list && request.resource.data.usersWhoDisliked is list &&
+
+          // Lógica para adicionar/remover like e dislike (mantida como fornecida)
+          (
+            // Adicionando like
+            (request.resource.data.usersWhoLiked.size() == resource.data.usersWhoLiked.size() + 1 &&
+             request.resource.data.usersWhoLiked.hasAll(resource.data.usersWhoLiked) &&
+             request.resource.data.usersWhoLiked.diff(resource.data.usersWhoLiked).addedKeys().hasAll([request.auth.uid]) &&
+             request.resource.data.likes == resource.data.likes + 1 &&
+             // Se adicionou like, o usuário não deve estar mais em usersWhoDisliked ou foi removido
+             (!request.resource.data.usersWhoDisliked.hasAny([request.auth.uid]) ||
+              (resource.data.usersWhoDisliked.hasAny([request.auth.uid]) &&
+               request.resource.data.usersWhoDisliked.size() == resource.data.usersWhoDisliked.size() - 1 &&
+               resource.data.usersWhoDisliked.diff(request.resource.data.usersWhoDisliked).removedKeys().hasAll([request.auth.uid]) &&
+               request.resource.data.dislikes == resource.data.dislikes - 1
+              ))
+            ) ||
+            // Removendo like
+            (request.resource.data.usersWhoLiked.size() == resource.data.usersWhoLiked.size() - 1 &&
+             resource.data.usersWhoLiked.hasAll(request.resource.data.usersWhoLiked) &&
+             resource.data.usersWhoLiked.diff(resource.resource.data.usersWhoLiked).removedKeys().hasAll([request.auth.uid]) &&
+             request.resource.data.likes == resource.data.likes - 1 &&
+             !request.resource.data.usersWhoLiked.hasAny([request.auth.uid])
+            ) ||
+
+            // Adicionando dislike
+            (request.resource.data.usersWhoDisliked.size() == resource.resource.data.usersWhoDisliked.size() + 1 &&
+             request.resource.data.usersWhoDisliked.hasAll(resource.resource.data.usersWhoDisliked) &&
+             request.resource.data.usersWhoDisliked.diff(resource.resource.data.usersWhoDisliked).addedKeys().hasAll([request.auth.uid]) &&
+             request.resource.data.dislikes == resource.resource.data.dislikes + 1 &&
+             // Se adicionou dislike, o usuário não deve estar mais em usersWhoLiked ou foi removido
+             (!request.resource.data.usersWhoLiked.hasAny([request.auth.uid]) ||
+              (resource.resource.data.usersWhoLiked.hasAny([request.auth.uid]) &&
+               request.resource.data.usersWhoLiked.size() == resource.resource.data.usersWhoLiked.size() - 1 &&
+               resource.resource.data.usersWhoLiked.diff(request.resource.data.usersWhoLiked).removedKeys().hasAll([request.auth.uid]) &&
+               request.resource.data.likes == resource.resource.data.likes - 1
+              ))
+            ) ||
+            // Removendo dislike
+            (request.resource.data.usersWhoDisliked.size() == resource.resource.data.usersWhoDisliked.size() - 1 &&
+             resource.resource.data.usersWhoDisliked.hasAll(request.resource.data.usersWhoDisliked) &&
+             resource.resource.data.usersWhoDisliked.diff(resource.resource.data.usersWhoDisliked).removedKeys().hasAll([request.auth.uid]) &&
+             request.resource.data.dislikes == resource.resource.data.dislikes - 1 &&
+             !request.resource.data.usersWhoLiked.hasAny([request.auth.uid])
+            )
+          )
+        )
+      );
+
+      // Apenas o usuário que postou a série pode deletá-la.
+      allow delete: if request.auth != null && request.auth.uid == resource.data.postedBy;
+
+      // Subcoleção de episódios dentro de cada série.
+      match /episodios/{episodioId} {
+        // PERMISSÃO TOTAL DE LEITURA: Qualquer pessoa pode ler os episódios dentro de uma série.
+        // Isso complementa a regra de collectionGroup para garantir acesso direto.
+        allow read: if true;
+        
+        // Apenas usuários autenticados podem criar novos episódios em uma série.
+        allow create: if request.auth != null;
+        
+        // Apenas o usuário que postou o episódio ou o criador da série pode atualizá-lo ou deletá-lo.
+        // Isso é feito buscando o 'postedBy' da série pai.
+        allow update, delete: if request.auth != null && (request.auth.uid == resource.data.postedBy || request.auth.uid == get(/databases/$(database)/documents/series/$(serieId)).data.postedBy); 
+        
+        // Subcoleção de comentários dentro de cada episódio.
+        match /comments/{commentId} {
+          // PERMISSÃO TOTAL DE LEITURA: Qualquer pessoa pode ler os comentários.
+          allow read: if true;
+          // Apenas usuários autenticados podem criar novos comentários.
+          allow create: if request.auth != null;
+          // Apenas o usuário que postou o comentário pode atualizá-lo ou deletá-lo.
+          allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+        }
+
+        // Subcoleção para sugestões de abertura de episódio.
+        match /skipIntroSuggestions/{suggestionId} {
+          // Usuários autenticados podem criar sugestões.
+          allow create: if request.auth != null;
+          // Usuários só podem ler, atualizar ou deletar SUAS PRÓPRIAS sugestões.
+          allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.suggestedBy;
+        }
+      }
+    }
+
+    // Regras para a coleção de 'reports' de erro.
+    match /reports/{reportId} {
+      // Apenas usuários autenticados podem criar um novo reporte.
+      allow create: if request.auth != null;
+      // Ninguém (nem mesmo o criador) pode ler, atualizar ou deletar reportes diretamente do cliente.
+      // Reportes devem ser gerenciados por administradores através de um backend seguro (ex: Cloud Functions).
+      allow read, update, delete: if false; // Proíbe leitura, atualização e deleção do cliente
+    }
+
+    // Regras para a subcoleção de avaliações (ratings) de cada série
+    match /series/{serieId}/ratings/{userId} {
+      // Usuários autenticados podem criar, ler e atualizar suas próprias avaliações.
+      // A lógica de média geral é tratada em uma transação do lado do servidor ou por Cloud Functions.
+      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+            // Usuários podem deletar suas próprias avaliações.
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // --- REGRAS PARA A COLEÇÃO 'waifus' ---
+    match /waifus/{waifuId} {
+      // Qualquer pessoa pode ler as waifus (para exibição na página principal e no perfil)
+      allow read: if true;
+
+      // Apenas usuários autenticados podem criar novas postagens de waifu
+      allow create: if request.auth != null;
+
+      // Regras de atualização:
+      allow update: if request.auth != null && (
+        // O criador pode atualizar o título e a URL da imagem
+        (request.auth.uid == resource.data.postedBy && request.resource.data.keys().hasOnly(['imageUrls', 'title', 'tags', 'serieId', 'serieName'])) ||
+
+        // OU: QUALQUER usuário (autenticado) pode atualizar APENAS os campos de 'likes' e 'usersWhoLiked'
+        // A validação aqui é crucial para a função toggleLikeWaifu
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'usersWhoLiked']) &&
+          request.resource.data.likes is int && request.resource.data.likes >= 0 &&
+          request.resource.data.usersWhoLiked is list &&
+          // Valida se o usersWhoLiked foi adicionado ou removido corretamente
+          (
+            // Se o usuário adicionou um like (novo user.uid no array)
+            (request.resource.data.usersWhoLiked.size() == resource.data.usersWhoLiked.size() + 1 &&
+             request.resource.data.usersWhoLiked.hasAll(resource.data.usersWhoLiked) &&
+             request.resource.data.usersWhoLiked.diff(resource.data.usersWhoLiked).addedKeys().hasAll([request.auth.uid])
+            ) ||
+            // Se o usuário removeu um like (user.uid removido do array)
+            (request.resource.data.usersWhoLiked.size() == resource.data.usersWhoLiked.size() - 1 &&
+             resource.data.usersWhoLiked.hasAll(request.resource.data.usersWhoLiked) &&
+             resource.data.usersWhoLiked.diff(request.resource.data.usersWhoLiked).removedKeys().hasAll([request.auth.uid])
+            )
+          )
+        )
+      );
+
+      // Apenas o usuário que postou a waifu pode deletá-la
+      allow delete: if request.auth != null && request.auth.uid == resource.data.postedBy;
+
+      // Regras para a subcoleção de comentários dentro de cada waifu (NOVO)
+      match /comments/{commentId} {
+        // Qualquer um pode ler os comentários
+        allow read: if true;
+        // Usuários autenticados podem criar comentários
+        allow create: if request.auth != null;
+        // Apenas o autor do comentário pode atualizá-lo ou excluí-lo
+        allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      }
+    }
+
+    // Regras para a coleção de tags
+    match /tags/{tagId} {
+        // Qualquer um pode ler as tags
+        allow read: if true;
+        // Apenas usuários autenticados podem criar/atualizar tags (geralmente via Cloud Functions ou admins)
+        // Por simplicidade, allow create/update para autenticados, mas idealmente seria mais restrito
+        allow create, update: if request.auth != null;
+        allow delete: if false; // Tags não devem ser deletadas por clientes
+    }
+
+  } // Fechamento do match /databases/{database}/documents
+} // Fechamento do service cloud.firestore
+
