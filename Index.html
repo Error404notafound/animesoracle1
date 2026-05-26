@@ -16,7 +16,7 @@ service cloud.firestore {
       // *** CORREÇÃO APLICADA AQUI: AJUSTADA A LEITURA DO PERFIL DO AUTOR DA WAIFU ***
       // Permite que QUALQUER USUÁRIO AUTENTICADO (request.auth != null) leia o perfil de QUALQUER OUTRO USUÁRIO (userId),
       // mas APENAS se estiver lendo o PRÓPRIO perfil, OU se estiver lendo campos específicos
-      // (como photoURL, displayName, status, statusExpiration) que são considerados públicos.
+      // (como photoURL, displayName, status, statusExpiration, email) que são considerados públicos.
       // Isso é NECESSÁRIO para exibir a foto/nome do autor da waifu no modal de detalhes,
       // e para a lista de "seguindo" na página de waifus.
       allow read: if request.auth != null && (
@@ -24,7 +24,7 @@ service cloud.firestore {
         // ATENÇÃO: Verifique se TODOS os campos que você tenta ler de outros usuários
         // na função openWaifuDetailModal e em loadWaifuFollowingList estão aqui.
         // Adicione 'email' se for usado, mas geralmente é privado.
-        resource.data.keys().hasAll(['photoURL', 'displayName', 'status', 'statusExpiration'])
+        resource.data.keys().hasAll(['photoURL', 'displayName', 'status', 'statusExpiration', 'email']) // Campos públicos que outros usuários podem ler
       );
       // Permite criar o próprio perfil
       allow create: if request.auth != null && request.auth.uid == userId;
@@ -97,7 +97,7 @@ service cloud.firestore {
                request.resource.data.dislikes == resource.data.dislikes - 1
               ))
             ) ||
-                        // Removendo like
+            // Removendo like
             (request.resource.data.usersWhoLiked.size() == resource.data.usersWhoLiked.size() - 1 &&
              resource.data.usersWhoLiked.hasAll(request.resource.data.usersWhoLiked) &&
              resource.data.usersWhoLiked.diff(resource.resource.data.usersWhoLiked).removedKeys().hasAll([request.auth.uid]) &&
@@ -105,7 +105,7 @@ service cloud.firestore {
              !request.resource.data.usersWhoLiked.hasAny([request.auth.uid])
             ) ||
 
-            // Adicionando dislike
+                        // Adicionando dislike
             (request.resource.data.usersWhoDisliked.size() == resource.resource.data.usersWhoDisliked.size() + 1 &&
              request.resource.data.usersWhoDisliked.hasAll(resource.resource.data.usersWhoDisliked) &&
              request.resource.data.usersWhoDisliked.diff(resource.resource.data.usersWhoDisliked).addedKeys().hasAll([request.auth.uid]) &&
@@ -244,4 +244,3 @@ service cloud.firestore {
 
   } // Fechamento do match /databases/{database}/documents
 } // Fechamento do service cloud.firestore
-
